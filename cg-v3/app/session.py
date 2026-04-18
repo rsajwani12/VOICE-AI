@@ -233,11 +233,12 @@ class MeetingSession:
             except Exception as e:
                 print(f"[agent_loop] error: {e}")
 
-    async def force_agent_speak(self) -> Optional[AgentUtterance]:
+    async def force_agent_speak(self, purpose: Optional[str] = None) -> Optional[AgentUtterance]:
         utt = await self.claude.generate_agent_utterance(
             context=self.context,
             transcript=self.transcript,
             biomarkers=self.biomarkers,
+            forced_purpose=purpose,
         )
         if utt:
             await self._emit_agent_utterance(utt)

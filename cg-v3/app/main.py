@@ -138,11 +138,16 @@ async def force_analyse():
     return {"ok": True}
 
 
+class AgentSpeakIn(BaseModel):
+    purpose: str | None = None  # 'probe' | 'steer' | 'calm' | 'thought-provoker' | 'summary'
+
+
 @app.post("/api/session/agent-speak")
-async def force_agent_speak():
+async def force_agent_speak(payload: AgentSpeakIn | None = None):
     if SESSION is None:
         raise HTTPException(400, "No active session")
-    utt = await SESSION.force_agent_speak()
+    purpose = payload.purpose if payload else None
+    utt = await SESSION.force_agent_speak(purpose=purpose)
     if utt:
         return {"ok": True, "utterance": utt.to_dict()}
     return {"ok": True, "utterance": None}

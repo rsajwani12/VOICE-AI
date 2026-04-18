@@ -218,6 +218,7 @@ Return `{{"items": []}}` if nothing new since last analysis. Do not repeat prior
         context: MeetingContext,
         transcript: list[TranscriptLine],
         biomarkers: list[BiomarkerUpdate],
+        forced_purpose: Optional[str] = None,
     ) -> Optional[AgentUtterance]:
         """
         Decide whether the voice agent should interject. If yes, return the
@@ -229,14 +230,18 @@ Return `{{"items": []}}` if nothing new since last analysis. Do not repeat prior
         - Calm the room when stress biomarkers spike
         - Introduce structure at natural pauses
 
+        If `forced_purpose` is set (e.g. 'probe', 'steer', 'thought-provoker'),
+        the agent MUST speak with that purpose. This is used by the UI when
+        the PM explicitly clicks "Probe" / "Steer" / etc.
+
         Thymia's for_agent guidance is incorporated directly.
         """
         if self.mock:
-            return self._mock_utterance(transcript, biomarkers)
+            return self._mock_utterance(transcript, biomarkers, forced_purpose)
         if not transcript:
             return None
 
-        prompt = self._build_agent_prompt(context, transcript, biomarkers)
+        prompt = self._build_agent_prompt(context, transcript, biomarkers, forced_purpose)
         try:
             client = self._sdk()
             msg = await client.messages.create(
@@ -256,6 +261,7 @@ Return `{{"items": []}}` if nothing new since last analysis. Do not repeat prior
         context: MeetingContext,
         transcript: list[TranscriptLine],
         biomarkers: list[BiomarkerUpdate],
+        forced_purpose: Optional[str] = None,
     ) -> str:
         transcript_block = "\n".join(
             f"[{l.speaker_name}]: {l.text}"
@@ -264,14 +270,30 @@ Return `{{"items": []}}` if nothing new since last analysis. Do not repeat prior
         bio_block = self._summarise_biomarkers(biomarkers) or "Biomarkers calibrating."
         thymia_block = self._format_thymia_hints()
 
-        return f"""You are the voice of an AI facilitator embedded in a client meeting. The product manager ({self._pm_name(context)}) is discussing {context.objective} with the client team. You rarely speak, but when you do, it is to move the conversation forward, keep it on track, surface something that's being missed, or de-escalate tension.
+        forced_clause = ""
+        if forced_purpose:
+            forced_clause = (
+                f"\n\n# IMPORTANT OVERRIDE\n"
+                f"The product manager has explicitly asked you to speak with purpose = \"{forced_purpose}\". "
+                f"You MUST set `speak: true` and `purpose: \"{forced_purpose}\"`. "
+                f"Generate an appropriate utterance for this purpose based on the conversation."
+            )
+
+        return f"""You are the voice of an AI facilitator embedded in a client meeting. The product manager ({self._pm_name(context)}) is discussing {context.objective} with the client team. You rarely speak unprompted, but when you do, it is to move the conversation forward, keep it on track, surface something that's being missed, or de-escalate tension.
 
 # Rules
-- You must be rare. If the conversation is flowing well, stay silent.
+- You must be rare when speaking on your own judgement. If the conversation is flowing well, stay silent.
 - Your voice is calm, professional, neutral. You are not a participant — you are a facilitator.
 - You never make commitments on behalf of the company.
 - You never disclose client-side biomarkers to the room.
 - You speak in short sentences (1-2 max). Your goal is to open space, not take it.
+
+# Purposes
+- "probe": ask a specific follow-up on something just said
+- "steer": redirect if the conversation is drifting off-topic
+- "calm": slow the pace if tension has risen
+- "thought-provoker": open a new angle / ask "what if" / surface what's being missed
+- "summary": pull together what has been agreed or explored
 
 # Current conversation
 {transcript_block}
@@ -280,12 +302,10 @@ Return `{{"items": []}}` if nothing new since last analysis. Do not repeat prior
 {bio_block}
 
 # Thymia policy guidance
-{thymia_block}
+{thymia_block}{forced_clause}
 
 # Your decision
-Should you speak right now? If YES, return a JSON object with the exact words and purpose. If NO, return {{"speak": false}}.
-
-Schema:
+If no `forced_purpose` is set above, decide whether to speak. Return JSON only:
 ```
 {{
   "speak": true | false,
@@ -295,10 +315,12 @@ Schema:
 }}
 ```
 
-Examples of good utterances:
-- "Before we move on — what concerns would we want to raise with the compliance team here?"
-- "It feels like we've touched on two different priorities. Would it help to decide which to focus on?"
-- "Let's pause for a moment. Any reservations that haven't been said?"
+Examples of good utterances by purpose:
+- probe: "Before we move on — what concerns would we want to raise with the compliance team here?"
+- steer: "It feels like we've touched on two different priorities. Would it help to decide which to focus on?"
+- calm: "Let's pause for a moment. Any reservations that haven't been said?"
+- thought-provoker: "If we paused this project for a week — what would we regret not having asked today?"
+- summary: "So we've aligned on the six-month timeline with the parallel-run safety net. Fair summary?"
 
 Return only the JSON."""
 
@@ -397,17 +419,21 @@ Return only the JSON."""
         ]
         return [random.choice(templates)]
 
-    def _mock_utterance(self, transcript, biomarkers) -> Optional[AgentUtterance]:
+    def _mock_utterance(self, transcript, biomarkers, forced_purpose=None) -> Optional[AgentUtterance]:
+        templates = {
+            "probe": "Before we move on — what concerns would we want to raise with compliance on this?",
+            "steer": "It sounds like two priorities have come into view. Shall we pin one first?",
+            "calm": "Let's pause for a moment. Any reservations that haven't been said?",
+            "thought-provoker": "If we paused the project for a week — what would we regret not having asked today?",
+            "summary": "So we've aligned on the six-month timeline with the parallel-run safety net. Fair summary?",
+        }
+        if forced_purpose:
+            text = templates.get(forced_purpose, templates["probe"])
+            return AgentUtterance(text=text, purpose=forced_purpose)
         if not transcript or len(transcript) < 4:
             return None
         import random
         if random.random() > 0.25:
             return None
-        templates = [
-            ("probe", "Before we move on — what concerns would we want to raise with compliance on this?"),
-            ("steer", "It sounds like two priorities have come into view. Shall we pin one first?"),
-            ("calm", "Let's pause for a moment. Any reservations that haven't been said?"),
-            ("thought-provoker", "If we paused the project for a week — what would we regret not having asked today?"),
-        ]
-        purpose, text = random.choice(templates)
-        return AgentUtterance(text=text, purpose=purpose)
+        purpose = random.choice(list(templates.keys()))
+        return AgentUtterance(text=templates[purpose], purpose=purpose)
