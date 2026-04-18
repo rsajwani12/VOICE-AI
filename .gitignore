@@ -1,0 +1,8 @@
+.env
+*.env
+!.env.example
+cg-v3/static/audio/
+cg-v3/reports/
+**/__pycache__/
+*.pyc
+.DS_Store
