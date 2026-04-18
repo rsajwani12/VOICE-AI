@@ -1,0 +1,1346 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Common Ground — Live Meeting Intelligence</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Fraunces:ital,wght@0,300..900;1,300..900&family=JetBrains+Mono:wght@300;400;500;700&family=Instrument+Serif:ital@0;1&display=swap" rel="stylesheet">
+<style>
+  :root {
+    --bg-primary: #0a0a0b;
+    --bg-panel: #111113;
+    --bg-panel-raised: #17171a;
+    --bg-accent: #1c1c20;
+    --border: #232326;
+    --border-bright: #2e2e33;
+    --text-primary: #ededf0;
+    --text-secondary: #9a9aa3;
+    --text-tertiary: #5c5c66;
+    --accent-signal: #d4b896;
+    --accent-alert: #e87d5e;
+    --accent-warn: #d4a55e;
+    --accent-good: #7fa882;
+    --accent-ink: #5a6d8c;
+    --accent-reg: #b57fc7;
+    --accent-thymia: #6ba8c7;
+    --grid: rgba(255,255,255,0.02);
+    --font-display: "Fraunces", Georgia, serif;
+    --font-body: "JetBrains Mono", "SF Mono", monospace;
+    --font-serif: "Instrument Serif", Georgia, serif;
+  }
+
+  * { margin: 0; padding: 0; box-sizing: border-box; }
+  html, body {
+    background: var(--bg-primary); color: var(--text-primary);
+    font-family: var(--font-body); font-size: 13px; line-height: 1.5;
+    height: 100vh; overflow: hidden; letter-spacing: 0.01em;
+  }
+  body {
+    background-image:
+      radial-gradient(ellipse at 20% 0%, rgba(212, 184, 150, 0.04), transparent 50%),
+      radial-gradient(ellipse at 80% 100%, rgba(90, 109, 140, 0.03), transparent 50%),
+      linear-gradient(var(--grid) 1px, transparent 1px),
+      linear-gradient(90deg, var(--grid) 1px, transparent 1px);
+    background-size: 100% 100%, 100% 100%, 48px 48px, 48px 48px;
+  }
+  button { font-family: inherit; cursor: pointer; }
+  input, textarea, select { font-family: inherit; }
+  code { font-family: var(--font-body); background: var(--bg-accent); padding: 1px 5px; font-size: 0.9em; }
+
+  /* HEADER */
+  .header {
+    display: flex; justify-content: space-between; align-items: center;
+    padding: 16px 28px; border-bottom: 1px solid var(--border);
+    background: rgba(10, 10, 11, 0.7); backdrop-filter: blur(12px);
+    height: 60px; position: relative; z-index: 10;
+  }
+  .logo { display: flex; align-items: center; gap: 14px; }
+  .logo-mark {
+    width: 22px; height: 22px; border: 1px solid var(--accent-signal);
+    border-radius: 50%; position: relative;
+  }
+  .logo-mark::before, .logo-mark::after { content: ''; position: absolute; background: var(--accent-signal); }
+  .logo-mark::before { width: 100%; height: 1px; top: 50%; left: 0; }
+  .logo-mark::after { width: 1px; height: 100%; left: 50%; top: 0; }
+  .logo-text { font-family: var(--font-display); font-size: 17px; font-weight: 400; letter-spacing: -0.02em; }
+  .logo-text em { font-style: italic; color: var(--accent-signal); }
+
+  .header-controls { display: flex; align-items: center; gap: 16px; }
+  .view-switch { display: flex; background: var(--bg-panel); border: 1px solid var(--border); padding: 2px; }
+  .view-btn {
+    padding: 7px 14px; background: transparent; border: none;
+    color: var(--text-secondary); font-size: 10px;
+    text-transform: uppercase; letter-spacing: 0.14em; transition: all 0.2s;
+  }
+  .view-btn.active { background: var(--accent-signal); color: var(--bg-primary); font-weight: 600; }
+
+  .rec-indicator {
+    display: flex; align-items: center; gap: 8px;
+    padding: 6px 12px; border: 1px solid var(--border); background: var(--bg-panel);
+  }
+  .rec-indicator.live { border-color: var(--accent-alert); background: rgba(232, 125, 94, 0.08); }
+  .rec-dot { width: 6px; height: 6px; background: var(--text-tertiary); border-radius: 50%; }
+  .rec-indicator.live .rec-dot { background: var(--accent-alert); animation: pulse 1.5s infinite; }
+  @keyframes pulse { 0%, 100% { opacity: 1; } 50% { opacity: 0.3; } }
+  .rec-text { font-size: 10px; text-transform: uppercase; letter-spacing: 0.15em; }
+  .rec-indicator.live .rec-text { color: var(--accent-alert); }
+
+  /* VIEWS */
+  .view { display: none; height: calc(100vh - 60px); }
+  .view.active { display: grid; }
+
+  /* SETUP */
+  #view-setup { grid-template-columns: 1fr; overflow-y: auto; }
+  .setup-container { max-width: 900px; margin: 0 auto; padding: 40px 32px 80px; width: 100%; }
+  .setup-title {
+    font-family: var(--font-display); font-size: 40px; font-weight: 300;
+    letter-spacing: -0.03em; line-height: 1.1; margin-bottom: 12px;
+  }
+  .setup-title em { font-style: italic; color: var(--accent-signal); }
+  .setup-subtitle {
+    font-family: var(--font-serif); font-style: italic; font-size: 18px;
+    color: var(--text-secondary); margin-bottom: 40px;
+  }
+  .setup-section {
+    background: var(--bg-panel); border: 1px solid var(--border);
+    padding: 24px 28px; margin-bottom: 20px;
+  }
+  .section-header { display: flex; align-items: baseline; gap: 12px; margin-bottom: 6px; }
+  .section-num { font-family: var(--font-display); font-style: italic; font-size: 22px; color: var(--accent-signal); }
+  .section-title { font-family: var(--font-display); font-size: 22px; font-weight: 500; letter-spacing: -0.01em; }
+  .section-desc { font-size: 12px; color: var(--text-secondary); margin-bottom: 20px; line-height: 1.55; }
+
+  .form-group { margin-bottom: 16px; }
+  .form-label {
+    display: block; font-size: 10px; text-transform: uppercase;
+    letter-spacing: 0.16em; color: var(--text-tertiary); margin-bottom: 6px;
+  }
+  .form-input, .form-textarea, .form-select {
+    width: 100%; padding: 10px 12px; background: var(--bg-primary);
+    border: 1px solid var(--border-bright); color: var(--text-primary);
+    font-size: 13px; font-family: var(--font-body); transition: border-color 0.2s;
+  }
+  .form-input:focus, .form-textarea:focus, .form-select:focus { outline: none; border-color: var(--accent-signal); }
+  .form-textarea {
+    min-height: 80px; resize: vertical; font-family: var(--font-serif);
+    font-size: 15px; font-style: italic; line-height: 1.5;
+  }
+  .form-row { display: grid; grid-template-columns: 1fr 1fr; gap: 14px; }
+  .hint { font-size: 11px; color: var(--text-tertiary); font-family: var(--font-serif); font-style: italic; margin-top: 6px; }
+
+  /* Stakeholders */
+  .stakeholders { display: flex; flex-direction: column; gap: 12px; }
+  .stakeholder-card { border: 1px solid var(--border); padding: 16px 18px; background: var(--bg-panel-raised); }
+  .stakeholder-head { display: flex; justify-content: space-between; align-items: flex-start; margin-bottom: 12px; }
+  .stakeholder-badge {
+    font-size: 9px; padding: 2px 8px; background: var(--bg-accent);
+    border: 1px solid var(--border-bright); text-transform: uppercase;
+    letter-spacing: 0.14em; color: var(--text-secondary);
+  }
+  .remove-btn { background: none; border: none; color: var(--text-tertiary); font-size: 14px; transition: color 0.2s; }
+  .remove-btn:hover { color: var(--accent-alert); }
+  .add-btn {
+    background: none; border: 1px dashed var(--border-bright); color: var(--text-secondary);
+    padding: 10px 16px; width: 100%; font-size: 11px;
+    text-transform: uppercase; letter-spacing: 0.14em; transition: all 0.2s;
+  }
+  .add-btn:hover { border-color: var(--accent-signal); color: var(--accent-signal); }
+
+  /* Domain toggles */
+  .domain-toggles { display: grid; grid-template-columns: repeat(3, 1fr); gap: 10px; }
+  .toggle {
+    display: flex; align-items: flex-start; gap: 10px; padding: 12px;
+    border: 1px solid var(--border); cursor: pointer; transition: all 0.2s;
+    background: var(--bg-panel-raised);
+  }
+  .toggle input { display: none; }
+  .toggle.checked { border-color: var(--accent-reg); background: rgba(181, 127, 199, 0.05); }
+  .toggle-check {
+    width: 14px; height: 14px; border: 1px solid var(--border-bright);
+    position: relative; flex-shrink: 0; margin-top: 2px;
+  }
+  .toggle.checked .toggle-check { background: var(--accent-reg); border-color: var(--accent-reg); }
+  .toggle.checked .toggle-check::after {
+    content: '✓'; position: absolute; left: 2px; top: -3px;
+    color: var(--bg-primary); font-size: 11px; font-weight: 700;
+  }
+  .toggle-label { flex: 1; font-size: 12px; }
+  .toggle-label strong { display: block; font-weight: 500; margin-bottom: 2px; }
+  .toggle-label small { color: var(--text-tertiary); font-size: 10px; display: block; }
+
+  /* Integration tiles */
+  .int-grid { display: grid; grid-template-columns: repeat(4, 1fr); gap: 10px; }
+  .int-tile { padding: 12px 14px; background: var(--bg-panel-raised); border: 1px solid var(--border); font-size: 11px; }
+  .int-status { font-size: 9px; text-transform: uppercase; letter-spacing: 0.14em; margin-bottom: 3px; }
+
+  /* Start button */
+  .start-row { display: flex; justify-content: space-between; align-items: center; margin-top: 32px; }
+  .start-btn {
+    padding: 14px 28px; background: var(--accent-signal); border: none;
+    color: var(--bg-primary); font-size: 11px; text-transform: uppercase;
+    letter-spacing: 0.2em; font-weight: 600; transition: all 0.2s;
+  }
+  .start-btn:hover { background: var(--text-primary); }
+  .start-btn:disabled { opacity: 0.4; cursor: not-allowed; }
+  .start-note { font-family: var(--font-serif); font-style: italic; font-size: 14px; color: var(--text-secondary); }
+
+  /* LIVE VIEW */
+  #view-live { grid-template-columns: 1fr 440px; }
+  .conversation-area { display: grid; grid-template-rows: auto 1fr auto; border-right: 1px solid var(--border); overflow: hidden; }
+  .speakers-row { display: grid; grid-template-columns: 1fr 1fr; gap: 1px; background: var(--border); padding: 1px 0; }
+  .speaker-card { background: var(--bg-panel); padding: 16px 24px; display: flex; flex-direction: column; gap: 12px; }
+  .speaker-header { display: flex; justify-content: space-between; align-items: flex-start; }
+  .speaker-label { display: flex; flex-direction: column; gap: 2px; }
+  .speaker-role { font-size: 9px; text-transform: uppercase; letter-spacing: 0.18em; color: var(--text-tertiary); }
+  .speaker-name { font-family: var(--font-display); font-size: 17px; font-weight: 400; letter-spacing: -0.01em; }
+  .speaker-status { display: flex; align-items: center; gap: 6px; font-size: 10px; color: var(--text-secondary); text-transform: uppercase; letter-spacing: 0.1em; }
+  .status-dot { width: 6px; height: 6px; border-radius: 50%; background: var(--text-tertiary); }
+  .speaker-status.speaking .status-dot { background: var(--accent-good); box-shadow: 0 0 8px var(--accent-good); animation: pulse 0.6s infinite; }
+
+  .biomarkers { display: grid; grid-template-columns: repeat(3, 1fr); gap: 10px; }
+  .biomarker { display: flex; flex-direction: column; gap: 5px; }
+  .bio-label { font-size: 9px; text-transform: uppercase; letter-spacing: 0.12em; color: var(--text-tertiary); display: flex; justify-content: space-between; }
+  .bio-value { color: var(--text-secondary); font-weight: 500; }
+  .bio-value.hot { color: var(--accent-alert); }
+  .bio-value.warm { color: var(--accent-warn); }
+  .bio-value.cool { color: var(--accent-good); }
+  .bio-value.pending { color: var(--text-tertiary); font-style: italic; }
+  .bio-bar { height: 3px; background: var(--bg-accent); overflow: hidden; position: relative; }
+  .bio-fill { height: 100%; background: var(--text-secondary); transition: width 0.6s ease, background 0.3s ease; width: 0%; }
+  .bio-fill.hot { background: var(--accent-alert); box-shadow: 0 0 6px var(--accent-alert); }
+  .bio-fill.warm { background: var(--accent-warn); }
+  .bio-fill.cool { background: var(--accent-good); }
+  .bio-fill.pending {
+    background: linear-gradient(90deg, var(--border-bright), var(--text-tertiary), var(--border-bright));
+    background-size: 200% 100%; animation: shimmer 2s infinite linear;
+  }
+  @keyframes shimmer { 0% { background-position: 200% 0; } 100% { background-position: -200% 0; } }
+
+  /* Speaker toggle bar - who is currently talking */
+  .speaker-toggle-bar {
+    display: grid;
+    grid-template-columns: auto 1fr;
+    gap: 16px;
+    align-items: center;
+    padding: 14px 28px;
+    background: var(--bg-panel-raised);
+    border-bottom: 1px solid var(--border);
+  }
+  .toggle-label-left {
+    font-size: 10px;
+    text-transform: uppercase;
+    letter-spacing: 0.18em;
+    color: var(--text-tertiary);
+  }
+  .speaker-toggles {
+    display: flex;
+    gap: 8px;
+    flex-wrap: wrap;
+  }
+  .speaker-toggle {
+    padding: 10px 16px;
+    background: var(--bg-primary);
+    border: 1px solid var(--border-bright);
+    color: var(--text-secondary);
+    font-family: var(--font-body);
+    font-size: 11px;
+    transition: all 0.2s;
+    cursor: pointer;
+    display: flex;
+    align-items: center;
+    gap: 8px;
+  }
+  .speaker-toggle:hover {
+    border-color: var(--accent-signal);
+    color: var(--accent-signal);
+  }
+  .speaker-toggle.active {
+    background: var(--accent-signal);
+    color: var(--bg-primary);
+    border-color: var(--accent-signal);
+    font-weight: 600;
+  }
+  .speaker-toggle.active.client {
+    background: var(--accent-ink);
+    border-color: var(--accent-ink);
+    color: var(--text-primary);
+  }
+  .speaker-toggle .toggle-dot {
+    width: 8px;
+    height: 8px;
+    border-radius: 50%;
+    background: var(--text-tertiary);
+  }
+  .speaker-toggle.active .toggle-dot {
+    background: var(--bg-primary);
+    box-shadow: 0 0 6px var(--bg-primary);
+    animation: pulse 0.8s infinite;
+  }
+  .speaker-toggle.active.client .toggle-dot {
+    background: var(--text-primary);
+    box-shadow: 0 0 6px var(--text-primary);
+  }
+  .toggle-hint {
+    font-size: 10px;
+    color: var(--text-tertiary);
+    font-family: var(--font-serif);
+    font-style: italic;
+    margin-left: auto;
+  }
+
+  /* Transcript */
+  .transcript-container { padding: 22px 28px; overflow-y: auto; display: flex; flex-direction: column; gap: 14px; }
+  .transcript-empty { color: var(--text-tertiary); font-family: var(--font-serif); font-style: italic; font-size: 15px; text-align: center; padding: 60px 0; }
+  .transcript-line {
+    display: grid; grid-template-columns: 60px 90px 1fr; gap: 14px;
+    padding: 8px 0; border-bottom: 1px solid rgba(255,255,255,0.03);
+    align-items: start; opacity: 0; animation: fadeIn 0.4s forwards;
+  }
+  @keyframes fadeIn { from { opacity: 0; transform: translateY(4px); } to { opacity: 1; transform: translateY(0); } }
+  .tl-time { font-size: 11px; color: var(--text-tertiary); font-variant-numeric: tabular-nums; padding-top: 2px; }
+  .tl-speaker { font-size: 10px; text-transform: uppercase; letter-spacing: 0.12em; padding-top: 3px; font-weight: 500; }
+  .tl-speaker.consultant { color: var(--accent-signal); }
+  .tl-speaker.client { color: var(--accent-ink); }
+  .tl-text { font-family: var(--font-serif); font-size: 15px; line-height: 1.55; color: var(--text-primary); font-style: italic; }
+  .tl-text.interim { color: var(--text-tertiary); }
+
+  /* Agent utterance line */
+  .tl-agent {
+    background: rgba(107, 168, 199, 0.06);
+    border: 1px solid rgba(107, 168, 199, 0.2);
+    padding: 12px 14px;
+    border-left: 2px solid var(--accent-thymia);
+    margin: 4px 0;
+  }
+  .tl-agent-head { display: flex; justify-content: space-between; font-size: 9px; text-transform: uppercase; letter-spacing: 0.16em; color: var(--accent-thymia); margin-bottom: 6px; }
+  .tl-agent-text { font-family: var(--font-serif); font-size: 15px; font-style: italic; color: var(--text-primary); }
+  .tl-agent button {
+    margin-top: 8px; padding: 5px 10px; background: transparent;
+    border: 1px solid var(--accent-thymia); color: var(--accent-thymia);
+    font-size: 10px; text-transform: uppercase; letter-spacing: 0.1em;
+  }
+  .tl-agent button:hover { background: var(--accent-thymia); color: var(--bg-primary); }
+
+  /* Status bar */
+  .status-bar {
+    padding: 12px 28px; background: var(--bg-panel); border-top: 1px solid var(--border);
+    display: flex; justify-content: space-between; align-items: center;
+  }
+  .status-items { display: flex; gap: 24px; }
+  .status-item { display: flex; align-items: center; gap: 8px; font-size: 10px; text-transform: uppercase; letter-spacing: 0.1em; color: var(--text-secondary); }
+  .status-item .label { color: var(--text-tertiary); }
+  .status-item .val { color: var(--text-primary); font-variant-numeric: tabular-nums; }
+  .status-item .val.live { color: var(--accent-good); }
+  .status-item .val.pending { color: var(--text-tertiary); }
+  .elapsed {
+    font-family: var(--font-display); font-size: 20px; font-style: italic;
+    font-weight: 300; color: var(--accent-signal); font-variant-numeric: tabular-nums;
+  }
+
+  /* INTEL PANEL */
+  .intel-panel { display: grid; grid-template-rows: auto auto 1fr auto; overflow: hidden; background: var(--bg-panel); }
+  .panel-header { padding: 18px 22px 14px; border-bottom: 1px solid var(--border); }
+  .panel-title { font-family: var(--font-display); font-size: 20px; font-weight: 400; letter-spacing: -0.02em; }
+  .panel-title em { font-style: italic; color: var(--accent-signal); }
+  .panel-sub { font-size: 10px; text-transform: uppercase; letter-spacing: 0.16em; color: var(--text-tertiary); margin-top: 4px; }
+
+  .context-strip { padding: 12px 22px; background: var(--bg-panel-raised); border-bottom: 1px solid var(--border); font-size: 10px; line-height: 1.6; }
+  .context-label { text-transform: uppercase; letter-spacing: 0.14em; color: var(--text-tertiary); margin-bottom: 4px; }
+  .context-val { font-family: var(--font-serif); font-style: italic; font-size: 13px; color: var(--text-primary); }
+  .context-chips { display: flex; gap: 4px; margin-top: 6px; flex-wrap: wrap; }
+  .context-chip { font-size: 9px; padding: 2px 6px; border: 1px solid var(--accent-reg); color: var(--accent-reg); text-transform: uppercase; letter-spacing: 0.1em; }
+
+  .alerts-list { padding: 14px; overflow-y: auto; display: flex; flex-direction: column; gap: 10px; }
+  .empty-alert { padding: 50px 20px; text-align: center; color: var(--text-tertiary); font-family: var(--font-serif); font-style: italic; font-size: 14px; }
+
+  .alert { border: 1px solid var(--border-bright); padding: 14px; background: var(--bg-panel-raised); opacity: 0; animation: slideIn 0.5s forwards; }
+  @keyframes slideIn { from { opacity: 0; transform: translateX(12px); } to { opacity: 1; transform: translateX(0); } }
+  .alert.critical { border-left: 2px solid var(--accent-alert); background: linear-gradient(90deg, rgba(232, 125, 94, 0.08), var(--bg-panel-raised) 40%); }
+  .alert.warning { border-left: 2px solid var(--accent-warn); background: linear-gradient(90deg, rgba(212, 165, 94, 0.06), var(--bg-panel-raised) 40%); }
+  .alert.coaching { border-left: 2px solid var(--accent-signal); background: linear-gradient(90deg, rgba(212, 184, 150, 0.06), var(--bg-panel-raised) 40%); }
+  .alert.regulatory { border-left: 2px solid var(--accent-reg); background: linear-gradient(90deg, rgba(181, 127, 199, 0.08), var(--bg-panel-raised) 40%); }
+  .alert.value { border-left: 2px solid var(--accent-good); background: linear-gradient(90deg, rgba(127, 168, 130, 0.06), var(--bg-panel-raised) 40%); }
+
+  .alert-header { display: flex; justify-content: space-between; align-items: center; margin-bottom: 8px; gap: 8px; }
+  .alert-type { font-size: 9px; text-transform: uppercase; letter-spacing: 0.16em; font-weight: 600; flex: 1; }
+  .alert.critical .alert-type { color: var(--accent-alert); }
+  .alert.warning .alert-type { color: var(--accent-warn); }
+  .alert.coaching .alert-type { color: var(--accent-signal); }
+  .alert.regulatory .alert-type { color: var(--accent-reg); }
+  .alert.value .alert-type { color: var(--accent-good); }
+  .alert-source {
+    font-size: 8px; padding: 1px 5px; border: 1px solid var(--border-bright);
+    color: var(--text-tertiary); text-transform: uppercase; letter-spacing: 0.1em;
+  }
+  .alert-source.thymia { border-color: var(--accent-thymia); color: var(--accent-thymia); }
+  .alert-time { font-size: 10px; color: var(--text-tertiary); font-variant-numeric: tabular-nums; }
+
+  .alert-title { font-family: var(--font-display); font-size: 15px; font-weight: 500; line-height: 1.3; margin-bottom: 6px; letter-spacing: -0.01em; }
+  .alert-detail { font-size: 11px; color: var(--text-secondary); line-height: 1.5; margin-bottom: 10px; }
+  .alert-suggestion { padding: 10px 12px; background: var(--bg-primary); border: 1px dashed var(--border-bright); margin-top: 10px; }
+  .suggestion-label { font-size: 9px; text-transform: uppercase; letter-spacing: 0.16em; color: var(--accent-signal); margin-bottom: 5px; }
+  .suggestion-text { font-family: var(--font-serif); font-size: 13px; font-style: italic; color: var(--text-primary); line-height: 1.4; }
+
+  .live-controls { padding: 14px 22px; border-top: 1px solid var(--border); background: var(--bg-panel-raised); display: flex; gap: 8px; flex-wrap: wrap; }
+  .ctrl-btn {
+    padding: 8px 12px; background: var(--bg-primary); border: 1px solid var(--border);
+    color: var(--text-secondary); font-size: 10px; text-transform: uppercase;
+    letter-spacing: 0.1em; transition: all 0.2s; flex: 1; min-width: 100px;
+  }
+  .ctrl-btn:hover { border-color: var(--accent-signal); color: var(--accent-signal); }
+  .ctrl-btn.agent:hover { border-color: var(--accent-thymia); color: var(--accent-thymia); }
+  .ctrl-btn.stop { border-color: var(--accent-alert); color: var(--accent-alert); }
+  .ctrl-btn.stop:hover { background: var(--accent-alert); color: var(--bg-primary); }
+
+  .speaker-pick { display: flex; background: var(--bg-accent); border: 1px solid var(--border-bright); padding: 2px; }
+  .pick-btn { padding: 5px 10px; background: transparent; border: none; color: var(--text-secondary); font-size: 9px; text-transform: uppercase; letter-spacing: 0.1em; }
+  .pick-btn.active { background: var(--accent-signal); color: var(--bg-primary); font-weight: 600; }
+
+  ::-webkit-scrollbar { width: 4px; height: 4px; }
+  ::-webkit-scrollbar-track { background: transparent; }
+  ::-webkit-scrollbar-thumb { background: var(--border-bright); }
+
+  .error-banner { padding: 10px 14px; background: rgba(232, 125, 94, 0.1); border: 1px solid var(--accent-alert); color: var(--accent-alert); font-size: 11px; margin-bottom: 14px; font-family: var(--font-body); }
+  .error-banner.hide { display: none; }
+
+  .backend-health { padding: 12px 14px; background: var(--bg-panel-raised); border: 1px solid var(--border); font-family: var(--font-body); font-size: 11px; color: var(--text-secondary); margin-bottom: 14px; }
+</style>
+</head>
+<body>
+
+<header class="header">
+  <div class="logo">
+    <div class="logo-mark"></div>
+    <div class="logo-text">common <em>ground</em></div>
+  </div>
+  <div class="header-controls">
+    <div class="view-switch">
+      <button class="view-btn active" data-view="setup">Setup</button>
+      <button class="view-btn" data-view="live">Live</button>
+    </div>
+    <div class="rec-indicator" id="rec-indicator">
+      <div class="rec-dot"></div>
+      <div class="rec-text" id="rec-text">Not recording</div>
+    </div>
+  </div>
+</header>
+
+<!-- SETUP -->
+<div class="view active" id="view-setup">
+  <div class="setup-container">
+    <h1 class="setup-title">Before the <em>conversation</em></h1>
+    <p class="setup-subtitle">Prime the system with what it needs to hear the meeting properly.</p>
+
+    <div class="error-banner hide" id="err-banner"></div>
+    <div class="backend-health" id="backend-health">Checking backend…</div>
+
+    <!-- Meeting -->
+    <div class="setup-section">
+      <div class="section-header"><div class="section-num">01</div><div class="section-title">The meeting</div></div>
+      <p class="section-desc">What are you trying to achieve in this conversation? The voice agent will steer toward this objective.</p>
+      <div class="form-row">
+        <div class="form-group">
+          <label class="form-label">Client / Organisation</label>
+          <input type="text" class="form-input" id="org-name" value="Meridian Bank">
+        </div>
+        <div class="form-group">
+          <label class="form-label">Session type</label>
+          <select class="form-select" id="session-type">
+            <option>Product demo</option>
+            <option>Feedback review</option>
+            <option>Discovery workshop</option>
+            <option selected>Client workshop</option>
+            <option>Stakeholder interview</option>
+          </select>
+        </div>
+      </div>
+      <div class="form-group">
+        <label class="form-label">Objective</label>
+        <textarea class="form-textarea" id="objective">Get client sign-off on Option B (six-month migration with parallel-run safety net) for Q3 operational readiness. Surface any concerns before they lock the decision.</textarea>
+      </div>
+      <div class="form-group">
+        <label class="form-label">Delivery stage</label>
+        <select class="form-select" id="stage">
+          <option>Initial discovery</option>
+          <option>Requirements gathering</option>
+          <option selected>Solution review</option>
+          <option>Design phase</option>
+          <option>Build / implementation</option>
+          <option>User acceptance testing</option>
+        </select>
+      </div>
+    </div>
+
+    <!-- Stakeholders -->
+    <div class="setup-section">
+      <div class="section-header"><div class="section-num">02</div><div class="section-title">Who's in the room</div></div>
+      <p class="section-desc">Name each person. Add <em>observed behavioural notes</em> from prior meetings — what you've actually seen, not personality-test types.</p>
+      <div class="stakeholders" id="stakeholders"></div>
+      <button class="add-btn" onclick="addStakeholder()">+ Add stakeholder</button>
+    </div>
+
+    <!-- Regulatory -->
+    <div class="setup-section">
+      <div class="section-header"><div class="section-num">03</div><div class="section-title">Regulatory & domain context</div></div>
+      <p class="section-desc">The system will surface blind spots specific to frames you select.</p>
+      <div class="domain-toggles" id="domain-toggles"></div>
+    </div>
+
+    <!-- Integrations -->
+    <div class="setup-section">
+      <div class="section-header"><div class="section-num">04</div><div class="section-title">Integrations</div></div>
+      <p class="section-desc">API keys live in the backend's <code>.env</code>, never in the browser. Status shows which integrations are wired.</p>
+      <div class="int-grid" id="int-grid">
+        <div class="int-tile" data-int="anthropic">
+          <div class="int-status">— checking</div>
+          <div>Claude</div>
+          <small style="color: var(--text-tertiary);">Intelligence + agent brain</small>
+        </div>
+        <div class="int-tile" data-int="gradium">
+          <div class="int-status">— checking</div>
+          <div>Gradium</div>
+          <small style="color: var(--text-tertiary);">STT + TTS + voice</small>
+        </div>
+        <div class="int-tile" data-int="thymia">
+          <div class="int-status">— checking</div>
+          <div>Thymia Sentinel</div>
+          <small style="color: var(--text-tertiary);">Biomarkers + policies</small>
+        </div>
+        <div class="int-tile" data-int="livekit">
+          <div class="int-status">— checking</div>
+          <div>LiveKit</div>
+          <small style="color: var(--text-tertiary);">Meeting transport</small>
+        </div>
+      </div>
+    </div>
+
+    <div class="start-row">
+      <div class="start-note">Stakeholder profiles are saved on the backend.</div>
+      <button class="start-btn" id="btn-start-session">Start live session →</button>
+    </div>
+  </div>
+</div>
+
+<!-- LIVE -->
+<div class="view" id="view-live">
+  <div class="conversation-area">
+    <div class="speakers-row">
+      <div class="speaker-card">
+        <div class="speaker-header">
+          <div class="speaker-label">
+            <div class="speaker-role">Product Manager · You</div>
+            <div class="speaker-name" id="consultant-name">You</div>
+          </div>
+          <div class="speaker-status" id="consultant-status"><div class="status-dot"></div><span id="consultant-status-text">Listening</span></div>
+        </div>
+        <div class="biomarkers">
+          <div class="biomarker">
+            <div class="bio-label"><span>Confidence</span><span class="bio-value pending" id="pm-conf-val">—</span></div>
+            <div class="bio-bar"><div class="bio-fill pending" id="pm-conf-fill" style="width:100%"></div></div>
+          </div>
+          <div class="biomarker">
+            <div class="bio-label"><span>Stress</span><span class="bio-value pending" id="pm-stress-val">—</span></div>
+            <div class="bio-bar"><div class="bio-fill pending" id="pm-stress-fill" style="width:100%"></div></div>
+          </div>
+          <div class="biomarker">
+            <div class="bio-label"><span>Wellness</span><span class="bio-value pending" id="pm-well-val">—</span></div>
+            <div class="bio-bar"><div class="bio-fill pending" id="pm-well-fill" style="width:100%"></div></div>
+          </div>
+        </div>
+      </div>
+      <div class="speaker-card">
+        <div class="speaker-header">
+          <div class="speaker-label">
+            <div class="speaker-role">Client · active speaker</div>
+            <div class="speaker-name" id="client-name">Select speaker</div>
+          </div>
+          <div class="speaker-pick" id="speaker-pick"></div>
+        </div>
+        <div class="biomarkers">
+          <div class="biomarker">
+            <div class="bio-label"><span>Cog. Load</span><span class="bio-value pending" id="cl-cog-val">—</span></div>
+            <div class="bio-bar"><div class="bio-fill pending" id="cl-cog-fill" style="width:100%"></div></div>
+          </div>
+          <div class="biomarker">
+            <div class="bio-label"><span>Engagement</span><span class="bio-value pending" id="cl-eng-val">—</span></div>
+            <div class="bio-bar"><div class="bio-fill pending" id="cl-eng-fill" style="width:100%"></div></div>
+          </div>
+          <div class="biomarker">
+            <div class="bio-label"><span>Stress</span><span class="bio-value pending" id="cl-stress-val">—</span></div>
+            <div class="bio-bar"><div class="bio-fill pending" id="cl-stress-fill" style="width:100%"></div></div>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <!-- Speaker toggle - tells system who is currently talking -->
+    <div class="speaker-toggle-bar">
+      <div class="toggle-label-left">Currently speaking</div>
+      <div class="speaker-toggles" id="speaker-toggles">
+        <!-- Populated by primeLiveView() -->
+      </div>
+      <div class="toggle-hint">Tap the person talking · or press a number (1-4)</div>
+    </div>
+
+    <div class="transcript-container" id="transcript">
+      <div class="transcript-empty" id="transcript-empty">
+        Press <strong>Start recording</strong> to begin.<br>
+        <span style="font-size: 11px;">The system will transcribe, analyse, and — when it helps — speak as the voice agent.</span>
+      </div>
+    </div>
+
+    <div class="status-bar">
+      <div class="status-items">
+        <div class="status-item"><span class="label">Backend</span><span class="val" id="ws-status">disconnected</span></div>
+        <div class="status-item"><span class="label">STT</span><span class="val" id="stt-status">idle</span></div>
+        <div class="status-item"><span class="label">Thymia</span><span class="val pending" id="thymia-status">awaiting</span></div>
+        <div class="status-item"><span class="label">Agent</span><span class="val" id="agent-status">—</span></div>
+      </div>
+      <div class="elapsed" id="elapsed">00:00:00</div>
+    </div>
+  </div>
+
+  <div class="intel-panel">
+    <div class="panel-header">
+      <div class="panel-title">Live <em>intelligence</em></div>
+      <div class="panel-sub">Private to you · not shared with the room</div>
+    </div>
+    <div class="context-strip">
+      <div class="context-label">Primed with</div>
+      <div class="context-val" id="context-primer">—</div>
+      <div class="context-chips" id="context-chips"></div>
+    </div>
+    <div class="alerts-list" id="alerts">
+      <div class="empty-alert">Intelligence will surface here as the conversation develops.</div>
+    </div>
+    <div class="live-controls">
+      <button class="ctrl-btn" id="btn-record">● Start recording</button>
+      <button class="ctrl-btn" id="btn-force-analysis">Analyse now</button>
+      <button class="ctrl-btn agent" id="btn-agent-speak">Ask agent</button>
+      <button class="ctrl-btn stop" id="btn-end">End session</button>
+    </div>
+  </div>
+</div>
+
+<script>
+// ============================================================
+// STATE
+// ============================================================
+const state = {
+  stakeholders: [],
+  orgName: 'Meridian Bank',
+  objective: '',
+  sessionType: 'Client workshop',
+  stage: 'Solution review',
+  domains: {
+    'consumer-duty': false,
+    'accessibility': false,
+    'vulnerable-customers': false,
+    'data-protection': false,
+    'fair-value': false,
+    'complaints-handling': false,
+  },
+  recording: false,
+  startTime: null,
+  transcript: [],
+  liveInterim: '',
+  currentSpeakerKind: 'consultant', // consultant | client
+  currentClientName: null,
+  recognition: null,
+  restartScheduled: false,
+  micStream: null,
+  ws: null,
+  sessionActive: false,
+};
+
+const BACKEND = window.location.origin;
+const WS_URL = BACKEND.replace(/^http/, 'ws') + '/ws';
+
+// ============================================================
+// DOMAIN DEFS
+// ============================================================
+const DOMAIN_DEFS = {
+  'consumer-duty': { label: 'FCA Consumer Duty', desc: 'Four outcomes: products/services, price/value, consumer understanding, consumer support' },
+  'accessibility': { label: 'Accessibility (WCAG / Equality Act)', desc: 'WCAG 2.2 AA, reasonable adjustments' },
+  'vulnerable-customers': { label: 'Vulnerable customers', desc: 'FCA FG21/1 — health, life events, resilience, capability' },
+  'data-protection': { label: 'Data protection (UK GDPR)', desc: 'Lawful basis, DPIA, data minimisation' },
+  'fair-value': { label: 'Fair Value Assessment', desc: 'Price vs. benefit, target market, distribution' },
+  'complaints-handling': { label: 'Complaints (DISP)', desc: 'Root cause analysis, MI reporting' },
+};
+
+// ============================================================
+// LOCAL CONFIG PERSISTENCE
+// ============================================================
+const CFG_KEY = 'cg-v3-config';
+function saveCfg() {
+  const cfg = {
+    orgName: state.orgName, objective: state.objective,
+    sessionType: state.sessionType, stage: state.stage,
+    stakeholders: state.stakeholders, domains: state.domains,
+  };
+  localStorage.setItem(CFG_KEY, JSON.stringify(cfg));
+}
+function loadCfg() {
+  try {
+    const raw = localStorage.getItem(CFG_KEY);
+    if (raw) Object.assign(state, JSON.parse(raw));
+  } catch {}
+}
+
+// ============================================================
+// STAKEHOLDERS
+// ============================================================
+function addStakeholder(d) {
+  state.stakeholders.push(d || { name: '', role: '', notes: '', mbti: '', isClient: true });
+  renderStakeholders();
+}
+function removeStakeholder(i) { state.stakeholders.splice(i, 1); renderStakeholders(); }
+function updateStakeholder(i, field, val) {
+  state.stakeholders[i][field] = val;
+  saveCfg();
+}
+function renderStakeholders() {
+  const c = document.getElementById('stakeholders');
+  c.innerHTML = '';
+  state.stakeholders.forEach((s, i) => {
+    const card = document.createElement('div');
+    card.className = 'stakeholder-card';
+    card.innerHTML = `
+      <div class="stakeholder-head">
+        <div class="stakeholder-badge">${s.isClient ? 'Client side' : 'Our team'}</div>
+        <button class="remove-btn" onclick="removeStakeholder(${i})">×</button>
+      </div>
+      <div class="form-row">
+        <div class="form-group">
+          <label class="form-label">Name</label>
+          <input class="form-input" value="${esc(s.name)}" oninput="updateStakeholder(${i}, 'name', this.value)">
+        </div>
+        <div class="form-group">
+          <label class="form-label">Role</label>
+          <input class="form-input" value="${esc(s.role)}" oninput="updateStakeholder(${i}, 'role', this.value)">
+        </div>
+      </div>
+      <div class="form-group">
+        <label class="form-label">Observed behavioural notes</label>
+        <textarea class="form-textarea" oninput="updateStakeholder(${i}, 'notes', this.value)"
+          placeholder="e.g. Goes quiet when processing — silence is usually buy-in, not resistance.">${esc(s.notes)}</textarea>
+      </div>
+      <div class="form-row">
+        <div class="form-group">
+          <label class="form-label">Optional type input</label>
+          <input class="form-input" value="${esc(s.mbti)}" placeholder="e.g. INTJ"
+            oninput="updateStakeholder(${i}, 'mbti', this.value)">
+        </div>
+        <div class="form-group">
+          <label class="form-label">Side</label>
+          <select class="form-select" onchange="updateStakeholder(${i}, 'isClient', this.value === 'client'); renderStakeholders()">
+            <option value="client" ${s.isClient ? 'selected' : ''}>Client side</option>
+            <option value="team" ${!s.isClient ? 'selected' : ''}>Our team</option>
+          </select>
+        </div>
+      </div>`;
+    c.appendChild(card);
+  });
+}
+
+// ============================================================
+// DOMAIN TOGGLES
+// ============================================================
+function renderDomains() {
+  const c = document.getElementById('domain-toggles');
+  c.innerHTML = '';
+  for (const [key, def] of Object.entries(DOMAIN_DEFS)) {
+    const d = document.createElement('div');
+    d.className = 'toggle' + (state.domains[key] ? ' checked' : '');
+    d.innerHTML = `
+      <div class="toggle-check"></div>
+      <div class="toggle-label">
+        <strong>${def.label}</strong>
+        <small>${def.desc}</small>
+      </div>`;
+    d.onclick = () => { state.domains[key] = !state.domains[key]; saveCfg(); renderDomains(); };
+    c.appendChild(d);
+  }
+}
+
+// ============================================================
+// VIEW SWITCH
+// ============================================================
+document.querySelectorAll('.view-btn').forEach(b => {
+  b.onclick = () => switchView(b.dataset.view);
+});
+function switchView(v) {
+  document.querySelectorAll('.view-btn').forEach(b => b.classList.toggle('active', b.dataset.view === v));
+  document.querySelectorAll('.view').forEach(p => p.classList.remove('active'));
+  document.getElementById('view-' + v).classList.add('active');
+  if (v === 'live') primeLiveView();
+}
+
+function primeLiveView() {
+  const pm = state.stakeholders.find(s => !s.isClient);
+  if (pm) document.getElementById('consultant-name').textContent = pm.name || 'You';
+
+  const clients = state.stakeholders.filter(s => s.isClient);
+  const pick = document.getElementById('speaker-pick');
+  pick.innerHTML = '';
+  if (clients.length === 0) {
+    pick.innerHTML = '<span style="font-size:9px;color:var(--text-tertiary);padding:5px;">No clients</span>';
+  } else {
+    clients.forEach((c, i) => {
+      const btn = document.createElement('button');
+      btn.className = 'pick-btn' + (i === 0 ? ' active' : '');
+      btn.textContent = (c.name || '?').split(' ')[0];
+      btn.onclick = () => pickClientSpeaker(c, btn);
+      pick.appendChild(btn);
+    });
+    pickClientSpeaker(clients[0]);
+  }
+
+  const chips = document.getElementById('context-chips');
+  chips.innerHTML = '';
+  Object.entries(state.domains).filter(([, on]) => on).forEach(([k]) => {
+    const c = document.createElement('span'); c.className = 'context-chip';
+    c.textContent = DOMAIN_DEFS[k].label.split(' ')[0];
+    chips.appendChild(c);
+  });
+
+  const n = Object.values(state.domains).filter(Boolean).length;
+  document.getElementById('context-primer').textContent =
+    `${state.sessionType} · ${state.stakeholders.length} stakeholders · ${n} regulatory frame${n === 1 ? '' : 's'}`;
+
+  // Default active speaker = the product manager
+  if (pm) setActiveSpeaker(pm);
+  else renderSpeakerToggles();
+}
+
+function pickClientSpeaker(c, btn) {
+  state.currentClientName = c.name;
+  document.getElementById('client-name').textContent = c.name || 'Client';
+  if (btn) {
+    document.querySelectorAll('.pick-btn').forEach(b => b.classList.remove('active'));
+    btn.classList.add('active');
+  }
+}
+
+// ============================================================
+// BACKEND SESSION MANAGEMENT
+// ============================================================
+async function checkBackendHealth() {
+  const el = document.getElementById('backend-health');
+  try {
+    const resp = await fetch(BACKEND + '/api/health');
+    if (!resp.ok) throw new Error(resp.status);
+    const data = await resp.json();
+    const mode = data.use_mock ? 'Mock mode (synthetic data)' : 'Live mode';
+    el.innerHTML = `<span style="color: var(--accent-good);">● Backend connected</span> · ${mode}`;
+    Object.entries(data.integrations).forEach(([k, ok]) => {
+      const tile = document.querySelector(`[data-int="${k}"]`);
+      if (!tile) return;
+      const s = tile.querySelector('.int-status');
+      if (ok) { s.textContent = '● Key loaded'; s.style.color = 'var(--accent-good)'; }
+      else { s.textContent = '○ No key'; s.style.color = 'var(--accent-warn)'; }
+    });
+  } catch (err) {
+    el.innerHTML = `<span style="color: var(--accent-alert);">● Backend offline</span> — run <code>uvicorn app.main:app</code>`;
+  }
+}
+
+async function createSession() {
+  const payload = {
+    org_name: state.orgName,
+    objective: state.objective,
+    session_type: state.sessionType,
+    stage: state.stage,
+    stakeholders: state.stakeholders.map(s => ({
+      name: s.name, role: s.role, notes: s.notes, mbti: s.mbti, is_client: s.isClient,
+    })),
+    regulatory_frames: Object.entries(state.domains).filter(([, on]) => on).map(([k]) => k),
+  };
+  const r = await fetch(BACKEND + '/api/session', {
+    method: 'POST', headers: {'Content-Type': 'application/json'},
+    body: JSON.stringify(payload),
+  });
+  if (!r.ok) throw new Error('Create session failed: ' + r.status);
+  return r.json();
+}
+
+function connectWs() {
+  if (state.ws) return;
+  state.ws = new WebSocket(WS_URL);
+  state.ws.onopen = () => {
+    document.getElementById('ws-status').textContent = '● connected';
+    document.getElementById('ws-status').className = 'val live';
+  };
+  state.ws.onmessage = (ev) => {
+    const msg = JSON.parse(ev.data);
+    handleWsMessage(msg);
+  };
+  state.ws.onerror = (e) => console.error('WS error', e);
+  state.ws.onclose = () => {
+    state.ws = null;
+    document.getElementById('ws-status').textContent = 'disconnected';
+    document.getElementById('ws-status').className = 'val';
+    if (state.sessionActive) setTimeout(connectWs, 2000);
+  };
+}
+
+function handleWsMessage(msg) {
+  if (msg.type === 'transcript') {
+    renderTranscriptLine(msg.line);
+  } else if (msg.type === 'biomarker') {
+    renderBiomarker(msg.update);
+  } else if (msg.type === 'alert') {
+    renderAlert(msg.alert);
+  } else if (msg.type === 'agent_utterance') {
+    renderAgentUtterance(msg.utterance);
+  } else if (msg.type === 'snapshot') {
+    // initial sync on connect
+    (msg.transcript || []).forEach(renderTranscriptLine);
+    (msg.alerts || []).forEach(renderAlert);
+  } else if (msg.type === 'error') {
+    showError(msg.message);
+  }
+}
+
+async function pushTranscriptToBackend(text, speakerKind, speakerName, tsStart, tsEnd) {
+  try {
+    await fetch(BACKEND + '/api/session/transcript', {
+      method: 'POST', headers: {'Content-Type': 'application/json'},
+      body: JSON.stringify({
+        text, speaker: speakerKind, speaker_name: speakerName,
+        ts_start: tsStart, ts_end: tsEnd,
+      }),
+    });
+  } catch (e) { console.error('push transcript failed', e); }
+}
+
+async function forceAnalysis() {
+  try { await fetch(BACKEND + '/api/session/analyse', {method: 'POST'}); }
+  catch (e) { showError('Analyse call failed: ' + e.message); }
+}
+
+async function forceAgentSpeak() {
+  try {
+    document.getElementById('agent-status').textContent = '● deciding';
+    const r = await fetch(BACKEND + '/api/session/agent-speak', {method: 'POST'});
+    const d = await r.json();
+    if (!d.utterance) {
+      document.getElementById('agent-status').textContent = '(declined)';
+      setTimeout(() => document.getElementById('agent-status').textContent = '—', 2500);
+    }
+  } catch (e) { showError('Agent call failed: ' + e.message); }
+}
+
+async function endSessionBackend() {
+  try {
+    const r = await fetch(BACKEND + '/api/session/end', {method: 'POST'});
+    const d = await r.json();
+    if (d.report_url) window.open(d.report_url, '_blank');
+  } catch (e) {}
+}
+
+// ============================================================
+// AUDIO + SPEECH RECOGNITION
+// ============================================================
+function initSpeechRecognition() {
+  const SR = window.SpeechRecognition || window.webkitSpeechRecognition;
+  if (!SR) { showError('Your browser does not support Web Speech API. Use Chrome or Edge.'); return null; }
+  const rec = new SR();
+  rec.continuous = true;
+  rec.interimResults = true;
+  rec.lang = 'en-GB';
+  rec.onresult = (ev) => {
+    let interim = '', final = '';
+    for (let i = ev.resultIndex; i < ev.results.length; i++) {
+      const r = ev.results[i];
+      if (r.isFinal) final += r[0].transcript;
+      else interim += r[0].transcript;
+    }
+    if (interim) state.liveInterim = interim;
+    if (final) {
+      const text = final.trim();
+      const speakerKind = state.currentSpeakerKind;
+      const speakerName = speakerKind === 'client'
+        ? state.currentClientName
+        : (state.stakeholders.find(s => !s.isClient)?.name || 'You');
+      pushTranscriptToBackend(text, speakerKind, speakerName,
+        (Date.now() - state.startTime) / 1000,
+        (Date.now() - state.startTime) / 1000);
+      state.liveInterim = '';
+    }
+    renderInterim();
+  };
+  rec.onerror = (ev) => {
+    if (ev.error === 'not-allowed') { showError('Microphone access denied.'); stopRecording(); }
+    else if (ev.error !== 'no-speech' && ev.error !== 'aborted') showError('STT error: ' + ev.error);
+  };
+  rec.onend = () => {
+    if (!state.recording || state.restartScheduled) return;
+    state.restartScheduled = true;
+    setTimeout(() => {
+      state.restartScheduled = false;
+      if (state.recording) { try { rec.start(); } catch {} }
+    }, 300);
+  };
+  return rec;
+}
+
+async function startRecording() {
+  clearError();
+  try {
+    await createSession();
+    state.sessionActive = true;
+    connectWs();
+  } catch (err) {
+    showError('Backend session failed: ' + err.message + '. Is the Python server running?');
+    return;
+  }
+
+  try {
+    if (!state.micStream) {
+      state.micStream = await navigator.mediaDevices.getUserMedia({
+        audio: { echoCancellation: true, noiseSuppression: true, autoGainControl: true },
+      });
+    }
+  } catch (err) {
+    showError('Mic access denied: ' + err.message);
+    return;
+  }
+
+  if (!state.recognition) state.recognition = initSpeechRecognition();
+  if (!state.recognition) return;
+  try { state.recognition.start(); } catch (e) { if (!String(e).includes('already started')) showError(e.message); }
+
+  state.recording = true;
+  state.startTime = state.startTime || Date.now();
+  document.getElementById('rec-indicator').classList.add('live');
+  document.getElementById('rec-text').textContent = 'Recording';
+  document.getElementById('btn-record').textContent = '● Pause recording';
+  document.getElementById('stt-status').textContent = '● live';
+  document.getElementById('stt-status').className = 'val live';
+
+  const e = document.getElementById('transcript-empty'); if (e) e.remove();
+
+  if (!state.elapsedInterval) {
+    state.elapsedInterval = setInterval(() => {
+      if (state.recording) {
+        const s = Math.floor((Date.now() - state.startTime) / 1000);
+        document.getElementById('elapsed').textContent = fmtTime(s);
+      }
+    }, 1000);
+  }
+}
+
+function stopRecording() {
+  state.recording = false;
+  if (state.recognition) try { state.recognition.stop(); } catch {}
+  document.getElementById('rec-indicator').classList.remove('live');
+  document.getElementById('rec-text').textContent = 'Paused';
+  document.getElementById('btn-record').textContent = '● Resume recording';
+  document.getElementById('stt-status').textContent = 'paused';
+  document.getElementById('stt-status').className = 'val';
+}
+
+function endSession() {
+  stopRecording();
+
+  // Clear timers
+  if (state.elapsedInterval) { clearInterval(state.elapsedInterval); state.elapsedInterval = null; }
+
+  // Release mic
+  if (state.micStream) {
+    state.micStream.getTracks().forEach(t => t.stop());
+    state.micStream = null;
+  }
+
+  // Close WebSocket and backend session
+  state.sessionActive = false;
+  if (state.ws) {
+    state.ws.onclose = null; // suppress auto-reconnect
+    try { state.ws.close(); } catch {}
+    state.ws = null;
+  }
+  endSessionBackend();
+
+  // === CRITICAL RESET === so a new session can start fresh
+  state.recording = false;
+  state.startTime = null;
+  state.transcript = [];
+  state.liveInterim = '';
+  state.recognition = null;
+  state.restartScheduled = false;
+
+  // Reset UI
+  document.getElementById('elapsed').textContent = '00:00:00';
+  document.getElementById('btn-record').textContent = '● Start recording';
+  document.getElementById('rec-indicator').classList.remove('live');
+  document.getElementById('rec-text').textContent = 'Not recording';
+
+  // Reset transcript panel
+  const tc = document.getElementById('transcript');
+  if (tc) {
+    tc.innerHTML = '<div class="transcript-empty" id="transcript-empty">' +
+      'Press <strong>Start recording</strong> to begin.<br>' +
+      '<span style="font-size: 11px;">The system will transcribe, analyse, and — when it helps — speak as the voice agent.</span>' +
+      '</div>';
+  }
+
+  // Reset alerts panel
+  const alerts = document.getElementById('alerts');
+  if (alerts) {
+    alerts.innerHTML = '<div class="empty-alert">Intelligence will surface here as the conversation develops.</div>';
+  }
+
+  // Reset biomarker bars back to pending
+  ['pm-conf', 'pm-stress', 'pm-well', 'cl-cog', 'cl-eng', 'cl-stress'].forEach(id => {
+    const fill = document.getElementById(id + '-fill');
+    const val = document.getElementById(id + '-val');
+    if (fill) { fill.className = 'bio-fill pending'; fill.style.width = '100%'; }
+    if (val) { val.className = 'bio-value pending'; val.textContent = '—'; }
+  });
+
+  // Reset status indicators
+  ['ws-status', 'stt-status', 'agent-status'].forEach(id => {
+    const el = document.getElementById(id);
+    if (el) { el.textContent = id === 'ws-status' ? 'disconnected' : (id === 'stt-status' ? 'idle' : '—'); el.className = 'val'; }
+  });
+  const thymiaStatus = document.getElementById('thymia-status');
+  if (thymiaStatus) { thymiaStatus.textContent = 'awaiting'; thymiaStatus.className = 'val pending'; }
+
+  switchView('setup');
+}
+
+// Speaker toggle rendering (populated after primeLiveView runs)
+function renderSpeakerToggles() {
+  const container = document.getElementById('speaker-toggles');
+  if (!container) return;
+  container.innerHTML = '';
+
+  state.stakeholders.forEach((s, i) => {
+    const isActive = state.currentSpeakerKind === (s.isClient ? 'client' : 'consultant')
+      && (s.isClient ? state.currentClientName === s.name : true);
+
+    const btn = document.createElement('button');
+    btn.className = 'speaker-toggle' + (isActive ? ' active' : '') + (s.isClient ? ' client' : '');
+    btn.innerHTML = `
+      <span class="toggle-dot"></span>
+      <span>${esc(s.name || 'Unnamed')}</span>
+      <span style="font-size: 9px; opacity: 0.7; text-transform: uppercase; letter-spacing: 0.1em;">${i + 1}</span>
+    `;
+    btn.onclick = () => setActiveSpeaker(s);
+    container.appendChild(btn);
+  });
+}
+
+function setActiveSpeaker(stakeholder) {
+  state.currentSpeakerKind = stakeholder.isClient ? 'client' : 'consultant';
+  if (stakeholder.isClient) {
+    state.currentClientName = stakeholder.name;
+    document.getElementById('client-name').textContent = stakeholder.name;
+  } else {
+    document.getElementById('consultant-name').textContent = stakeholder.name;
+  }
+
+  // Update top-card status
+  const pmStatus = document.getElementById('consultant-status');
+  const pmText = document.getElementById('consultant-status-text');
+  const clientStatusEl = document.querySelector('.speaker-card:nth-child(2) .speaker-status');
+
+  if (stakeholder.isClient) {
+    pmStatus?.classList.remove('speaking');
+    if (pmText) pmText.textContent = 'Listening';
+    clientStatusEl?.classList.add('speaking');
+  } else {
+    pmStatus?.classList.add('speaking');
+    if (pmText) pmText.textContent = 'Speaking';
+    clientStatusEl?.classList.remove('speaking');
+  }
+
+  renderSpeakerToggles();
+}
+
+// Number key shortcuts (1, 2, 3, 4) for fast speaker switching during a demo
+window.addEventListener('keydown', (e) => {
+  // Ignore if user is typing in an input
+  if (['INPUT', 'TEXTAREA', 'SELECT'].includes(document.activeElement.tagName)) return;
+  const num = parseInt(e.key, 10);
+  if (!isNaN(num) && num >= 1 && num <= state.stakeholders.length) {
+    const sh = state.stakeholders[num - 1];
+    if (sh) setActiveSpeaker(sh);
+  }
+});
+
+// ============================================================
+// RENDERERS
+// ============================================================
+function renderTranscriptLine(line) {
+  const c = document.getElementById('transcript');
+  const el = document.createElement('div');
+  el.className = 'transcript-line';
+  el.innerHTML = `
+    <div class="tl-time">${fmtTime(Math.floor(line.ts_start))}</div>
+    <div class="tl-speaker ${line.speaker}">${esc(line.speaker_name)}</div>
+    <div class="tl-text">${esc(line.text)}</div>`;
+  c.appendChild(el);
+  c.scrollTop = c.scrollHeight;
+}
+
+function renderInterim() {
+  // Remove old interim
+  document.querySelectorAll('.tl-text.interim').forEach(e => e.parentElement.remove());
+  if (!state.liveInterim) return;
+  const c = document.getElementById('transcript');
+  const el = document.createElement('div');
+  el.className = 'transcript-line';
+  const name = state.currentSpeakerKind === 'client'
+    ? (state.currentClientName || 'Client')
+    : (state.stakeholders.find(s => !s.isClient)?.name || 'You');
+  el.innerHTML = `
+    <div class="tl-time">…</div>
+    <div class="tl-speaker ${state.currentSpeakerKind}">${esc(name)}</div>
+    <div class="tl-text interim">${esc(state.liveInterim)}</div>`;
+  c.appendChild(el);
+  c.scrollTop = c.scrollHeight;
+}
+
+function renderAgentUtterance(utt) {
+  const c = document.getElementById('transcript');
+  const el = document.createElement('div');
+  el.className = 'tl-agent';
+  el.innerHTML = `
+    <div class="tl-agent-head">
+      <span>Voice agent · ${esc(utt.purpose || 'probe')}</span>
+      <span>${fmtTime(Math.floor((Date.now() - (state.startTime || Date.now())) / 1000))}</span>
+    </div>
+    <div class="tl-agent-text">"${esc(utt.text)}"</div>
+    ${utt.audio_url ? `<button onclick="playAgentAudio('${esc(utt.audio_url)}')">▶ Play</button>` : ''}`;
+  c.appendChild(el);
+  c.scrollTop = c.scrollHeight;
+  document.getElementById('agent-status').textContent = '● spoke';
+  setTimeout(() => document.getElementById('agent-status').textContent = '—', 3000);
+}
+
+function playAgentAudio(url) {
+  const audio = new Audio(url);
+  audio.play();
+}
+
+function renderBiomarker(u) {
+  const isClient = u.speaker === 'client';
+  const prefix = isClient ? 'cl-' : 'pm-';
+
+  const mapping = isClient
+    ? [['cog', 'cognitive_load'], ['eng', 'engagement'], ['stress', 'stress']]
+    : [['conf', 'confidence'], ['stress', 'stress'], ['well', 'wellness']];
+
+  mapping.forEach(([ui, k]) => {
+    const v = u[k];
+    if (v === null || v === undefined) return;
+    const pct = Math.min(100, Math.max(0, v * 100));
+    const heat = v > 0.7 ? 'hot' : v > 0.5 ? 'warm' : 'cool';
+    const fill = document.getElementById(prefix + ui + '-fill');
+    const val = document.getElementById(prefix + ui + '-val');
+    if (fill) { fill.style.width = pct + '%'; fill.className = 'bio-fill ' + heat; }
+    if (val) { val.textContent = (v * 100).toFixed(0) + '%'; val.className = 'bio-value ' + heat; }
+  });
+
+  document.getElementById('thymia-status').textContent = '● live';
+  document.getElementById('thymia-status').className = 'val live';
+}
+
+function renderAlert(alert) {
+  const list = document.getElementById('alerts');
+  const empty = list.querySelector('.empty-alert');
+  if (empty) list.innerHTML = '';
+
+  const el = document.createElement('div');
+  el.className = 'alert ' + (alert.type || 'coaching');
+  const tick = fmtTime(Math.floor((Date.now() - (state.startTime || Date.now())) / 1000));
+
+  el.innerHTML = `
+    <div class="alert-header">
+      <div class="alert-type">${esc(alert.type_label || 'Intelligence')}</div>
+      <div class="alert-source ${alert.source === 'thymia' ? 'thymia' : ''}">${esc(alert.source || 'claude')}</div>
+      <div class="alert-time">${tick}</div>
+    </div>
+    <div class="alert-title">${esc(alert.title)}</div>
+    <div class="alert-detail">${esc(alert.detail)}</div>
+    ${alert.suggestion ? `
+      <div class="alert-suggestion">
+        <div class="suggestion-label">${esc(alert.suggestion_label || 'Suggested')}</div>
+        <div class="suggestion-text">"${esc(alert.suggestion)}"</div>
+      </div>` : ''}`;
+  list.insertBefore(el, list.firstChild);
+  while (list.children.length > 15) list.removeChild(list.lastChild);
+}
+
+// ============================================================
+// UTILITIES
+// ============================================================
+function fmtTime(s) {
+  const h = String(Math.floor(s / 3600)).padStart(2, '0');
+  const m = String(Math.floor((s % 3600) / 60)).padStart(2, '0');
+  const sec = String(s % 60).padStart(2, '0');
+  return `${h}:${m}:${sec}`;
+}
+function esc(s) {
+  return String(s || '').replace(/[&<>"']/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
+}
+function showError(msg) {
+  const b = document.getElementById('err-banner');
+  b.textContent = msg;
+  b.classList.remove('hide');
+  setTimeout(() => b.classList.add('hide'), 6000);
+}
+function clearError() { document.getElementById('err-banner').classList.add('hide'); }
+
+// ============================================================
+// INIT
+// ============================================================
+function wireForm() {
+  document.getElementById('org-name').addEventListener('input', e => { state.orgName = e.target.value; saveCfg(); });
+  document.getElementById('session-type').addEventListener('change', e => { state.sessionType = e.target.value; saveCfg(); });
+  document.getElementById('stage').addEventListener('change', e => { state.stage = e.target.value; saveCfg(); });
+  document.getElementById('objective').addEventListener('input', e => { state.objective = e.target.value; saveCfg(); });
+  document.getElementById('btn-start-session').onclick = () => {
+    if (state.stakeholders.length === 0) { showError('Add at least one stakeholder.'); return; }
+    saveCfg();
+    switchView('live');
+  };
+  document.getElementById('btn-record').onclick = async () => {
+    if (state.recording) stopRecording();
+    else await startRecording();
+  };
+  document.getElementById('btn-force-analysis').onclick = forceAnalysis;
+  document.getElementById('btn-agent-speak').onclick = forceAgentSpeak;
+  document.getElementById('btn-end').onclick = endSession;
+}
+
+function init() {
+  loadCfg();
+  document.getElementById('org-name').value = state.orgName || 'Meridian Bank';
+  document.getElementById('session-type').value = state.sessionType || 'Client workshop';
+  document.getElementById('stage').value = state.stage || 'Solution review';
+  if (state.objective) document.getElementById('objective').value = state.objective;
+  else state.objective = document.getElementById('objective').value;
+
+  if (state.stakeholders.length === 0) {
+    state.stakeholders = [
+      { name: 'Patti Kusch', role: 'Product Manager', notes: '', mbti: '', isClient: false },
+      { name: 'Maria Chen', role: 'Product Owner', notes: 'Goes quiet when processing — silence is usually buy-in, not resistance. Direct questions work after ~20s pause.', mbti: '', isClient: true },
+      { name: 'James Halverson', role: 'CFO', notes: 'Silence often signals disagreement. Watches timelines closely.', mbti: '', isClient: true },
+    ];
+  }
+
+  renderStakeholders();
+  renderDomains();
+  wireForm();
+  checkBackendHealth();
+}
+
+init();
+</script>
+</body>
+</html>

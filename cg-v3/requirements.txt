@@ -1,0 +1,29 @@
+# ============================================================
+# Common Ground — real API-backed dependencies
+# ============================================================
+
+# Web server
+fastapi==0.115.0
+uvicorn[standard]==0.32.0
+python-dotenv==1.0.1
+python-multipart==0.0.12
+
+# LLM
+anthropic==0.39.0
+
+# Gradium — real SDK (from https://docs.gradium.ai/guides/installation)
+# pip install gradium
+# requires Python 3.10+
+
+# Thymia Sentinel — real SDK (from https://thymia-ai.github.io/thymia-sentinel-integrations/)
+# pip install thymia-sentinel
+
+# LiveKit Agents framework — used by Thymia's livekit integration
+# pip install livekit-agents
+
+# Audio handling
+numpy==1.26.4
+
+# HTTP client (fallback for raw calls)
+httpx==0.27.2
+websockets==13.1
