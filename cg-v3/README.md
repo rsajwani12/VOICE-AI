@@ -12,7 +12,7 @@ A product manager is reviewing work with a client. The client says "yes, that lo
 ┌──────────────────────────────────────────────────────────────┐
 │                      Meeting audio                            │
 │  Browser mic  ──▶  Web Speech API (dev) or                   │
-│                    LiveKit + Gradium STT (prod)              │
+│                    TinyFish + Gradium STT (prod)              │
 └────────────────────────────┬─────────────────────────────────┘
                              ▼
           ┌──────────────────┴──────────────────┐
@@ -151,9 +151,9 @@ Standard Anthropic SDK. Model: `claude-sonnet-4-5`. Two entry points:
 
 Both prompts integrate Thymia's `for_agent` guidance from policy results.
 
-### LiveKit (optional for the hack)
+### TinyFish (optional for the hack)
 
-The existing code uses browser mic + Web Speech API as a dev fallback. At the event, if you need real multi-participant meeting support, wire the LiveKit agent example from Thymia's docs:
+The existing code uses browser mic + Web Speech API as a dev fallback. At the event, if you need real multi-participant meeting support, wire the TinyFish agent example from Thymia's docs:
 
 - https://thymia-ai.github.io/thymia-sentinel-integrations/1.1.0/integrations/livekit/
 
