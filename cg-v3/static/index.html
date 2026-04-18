@@ -512,6 +512,7 @@
 
     <div class="error-banner hide" id="err-banner"></div>
     <div class="backend-health" id="backend-health">Checking backend…</div>
+    <div class="error-banner hide" id="report-banner" style="background: rgba(127, 168, 130, 0.08); border-color: var(--accent-good); color: var(--text-primary); padding: 18px 22px;"></div>
 
     <!-- Meeting -->
     <div class="setup-section">
@@ -585,10 +586,10 @@
           <div>Thymia Sentinel</div>
           <small style="color: var(--text-tertiary);">Biomarkers + policies</small>
         </div>
-        <div class="int-tile" data-int="livekit">
-          <div class="int-status">— checking</div>
-          <div>LiveKit</div>
-          <small style="color: var(--text-tertiary);">Meeting transport</small>
+        <div class="int-tile" data-int="tinyfish">
+          <div class="int-status" style="color: var(--accent-signal);">● Integrated</div>
+          <div>TinyFish</div>
+          <small style="color: var(--text-tertiary);">Documentation + post-meeting automation</small>
         </div>
       </div>
     </div>
@@ -722,9 +723,9 @@
           <div class="va-btn-label">Calm</div>
           <div class="va-btn-desc">Slow the pace if tension rises</div>
         </button>
-        <button class="va-btn" data-purpose="summary" onclick="askAgent('summary')">
+        <button class="va-btn" data-purpose="summary" onclick="startInterviewMode()">
           <div class="va-btn-label">Summarise</div>
-          <div class="va-btn-desc">Pull together what's been said</div>
+          <div class="va-btn-desc">Summary + 2-3 follow-up questions</div>
         </button>
         <button class="va-btn auto" onclick="askAgent()">
           <div class="va-btn-label">Ask agent</div>
@@ -770,6 +771,15 @@ const state = {
   micStream: null,
   ws: null,
   sessionActive: false,
+
+  // Interview mode state
+  interview: {
+    active: false,
+    queue: [],              // remaining utterances to speak
+    waitingForSpeaker: false,
+    silenceTimer: null,
+    lastTranscriptTs: 0,
+  },
 };
 
 const BACKEND = window.location.origin;
@@ -1006,6 +1016,10 @@ function connectWs() {
 function handleWsMessage(msg) {
   if (msg.type === 'transcript') {
     renderTranscriptLine(msg.line);
+    // If interview mode is waiting for a response, track the transcript timestamp
+    if (state.interview.active && state.interview.waitingForSpeaker) {
+      state.interview.lastTranscriptTs = Date.now();
+    }
   } else if (msg.type === 'biomarker') {
     renderBiomarker(msg.update);
   } else if (msg.type === 'alert') {
@@ -1073,12 +1087,162 @@ async function askAgent(purpose) {
   }
 }
 
+// ============================================================
+// INTERVIEW MODE — Summary + 2-3 adaptive follow-up questions
+// ============================================================
+// Flow: click Summarise → backend returns a SEQUENCE of utterances
+// (one summary + 2-3 questions). The frontend plays each one, then
+// waits for silence (~3 seconds) before asking the next question.
+// ============================================================
+
+const INTERVIEW_SILENCE_MS = 3000; // 3-second silence to advance
+const INTERVIEW_MIN_RESPONSE_MS = 2000; // must wait at least this long even if already silent
+
+async function startInterviewMode() {
+  if (state.interview.active) return;
+
+  // Mark the Summarise button as loading
+  const summariseBtn = document.querySelector('.va-btn[data-purpose="summary"]');
+  if (summariseBtn) summariseBtn.classList.add('loading');
+  document.querySelectorAll('.va-btn').forEach(b => b.disabled = true);
+  document.getElementById('agent-status').textContent = '● interview';
+  document.getElementById('agent-status').className = 'val live';
+
+  try {
+    const r = await fetch(BACKEND + '/api/session/interview', {method: 'POST'});
+    const d = await r.json();
+
+    if (!d.utterances || d.utterances.length === 0) {
+      document.getElementById('agent-status').textContent = '(no content)';
+      return;
+    }
+
+    // Utterances also come through the WebSocket (renderAgentUtterance will draw them).
+    // But we capture them HERE in order to manage the chained audio playback flow.
+    state.interview.active = true;
+    state.interview.queue = [...d.utterances];
+    state.interview.lastTranscriptTs = Date.now();
+
+    // Wait a brief moment for WS events to arrive first, then start playing
+    setTimeout(playNextInterviewUtterance, 400);
+  } catch (e) {
+    showError('Interview call failed: ' + e.message);
+  } finally {
+    document.querySelectorAll('.va-btn').forEach(b => {
+      b.classList.remove('loading');
+      b.disabled = false;
+    });
+  }
+}
+
+function playNextInterviewUtterance() {
+  if (!state.interview.active || state.interview.queue.length === 0) {
+    endInterviewMode();
+    return;
+  }
+
+  const utt = state.interview.queue.shift();
+  const isFirst = utt.purpose === 'summary';
+  const isLast = state.interview.queue.length === 0;
+
+  // Play the audio
+  if (utt.audio_url) {
+    const audio = new Audio(utt.audio_url);
+
+    // Mark the last-utterance card with "now playing" state
+    const btn = document.getElementById('va-last-play');
+    if (btn) {
+      btn.classList.add('playing');
+      btn.textContent = '■ Playing';
+    }
+
+    audio.onended = () => {
+      if (btn) {
+        btn.classList.remove('playing');
+        btn.textContent = '▶ Play';
+      }
+
+      if (isLast) {
+        endInterviewMode();
+      } else {
+        // Wait for the person to respond, then advance on silence
+        waitForResponseThenContinue();
+      }
+    };
+    audio.onerror = () => {
+      console.warn('Audio playback error — advancing');
+      if (isLast) endInterviewMode();
+      else waitForResponseThenContinue();
+    };
+    audio.play().catch(err => {
+      console.warn('Autoplay blocked on interview:', err);
+      // Fallback: advance after a delay anyway
+      setTimeout(() => {
+        if (isLast) endInterviewMode();
+        else waitForResponseThenContinue();
+      }, 3000);
+    });
+  } else {
+    // No audio URL (should not happen in live mode) — just advance
+    setTimeout(() => {
+      if (isLast) endInterviewMode();
+      else waitForResponseThenContinue();
+    }, 2000);
+  }
+}
+
+function waitForResponseThenContinue() {
+  state.interview.waitingForSpeaker = true;
+  state.interview.lastTranscriptTs = Date.now();
+
+  // Show status
+  document.getElementById('agent-status').textContent = '● listening';
+
+  // Start a silence-detection loop
+  const checkSilence = () => {
+    if (!state.interview.active) return;
+
+    const elapsedSinceTranscript = Date.now() - state.interview.lastTranscriptTs;
+
+    // Advance when: we've waited long enough AND no recent speech
+    if (elapsedSinceTranscript >= INTERVIEW_SILENCE_MS) {
+      state.interview.waitingForSpeaker = false;
+      document.getElementById('agent-status').textContent = '● speaking';
+      playNextInterviewUtterance();
+    } else {
+      // Check again in 500ms
+      state.interview.silenceTimer = setTimeout(checkSilence, 500);
+    }
+  };
+
+  // Always wait at least a minimum before advancing
+  setTimeout(checkSilence, INTERVIEW_MIN_RESPONSE_MS);
+}
+
+function endInterviewMode() {
+  state.interview.active = false;
+  state.interview.queue = [];
+  state.interview.waitingForSpeaker = false;
+  if (state.interview.silenceTimer) {
+    clearTimeout(state.interview.silenceTimer);
+    state.interview.silenceTimer = null;
+  }
+  document.getElementById('agent-status').textContent = '(interview complete)';
+  setTimeout(() => document.getElementById('agent-status').textContent = '—', 3000);
+}
+
 async function endSessionBackend() {
   try {
     const r = await fetch(BACKEND + '/api/session/end', {method: 'POST'});
     const d = await r.json();
-    if (d.report_url) window.open(d.report_url, '_blank');
-  } catch (e) {}
+    return {
+      reportUrl: d.report_url || null,
+      debrief: d.debrief || null,
+    };
+  } catch (e) {
+    console.error('End session failed:', e);
+    return { reportUrl: null, debrief: null };
+  }
 }
 
 // ============================================================
@@ -1183,7 +1347,7 @@ function stopRecording() {
   document.getElementById('stt-status').className = 'val';
 }
 
-function endSession() {
+async function endSession() {
   stopRecording();
 
   // Clear timers
@@ -1195,14 +1359,18 @@ function endSession() {
     state.micStream = null;
   }
 
-  // Close WebSocket and backend session
+  // Close WebSocket
   state.sessionActive = false;
   if (state.ws) {
-    state.ws.onclose = null; // suppress auto-reconnect
+    state.ws.onclose = null;
     try { state.ws.close(); } catch {}
     state.ws = null;
   }
-  endSessionBackend();
+
+  // Wait for the backend to finish generating the report + debrief
+  const result = await endSessionBackend();
+  const reportUrl = result.reportUrl;
+  const debrief = result.debrief;
 
   // === CRITICAL RESET === so a new session can start fresh
   state.recording = false;
@@ -1250,6 +1418,70 @@ function endSession() {
   if (thymiaStatus) { thymiaStatus.textContent = 'awaiting'; thymiaStatus.className = 'val pending'; }
 
   switchView('setup');
+
+  // Show the report + debrief banner
+  if (reportUrl || (debrief && debrief.text)) {
+    const banner = document.getElementById('report-banner');
+    if (banner) {
+      banner.classList.remove('hide');
+
+      const debriefBlock = (debrief && debrief.text) ? `
+        <div style="margin-top: 18px; padding-top: 18px; border-top: 1px solid rgba(127, 168, 130, 0.3);">
+          <div style="display: flex; justify-content: space-between; align-items: flex-start; gap: 16px; margin-bottom: 12px;">
+            <div>
+              <div style="font-size: 9px; text-transform: uppercase; letter-spacing: 0.16em; color: var(--accent-thymia); margin-bottom: 4px;">Closing debrief · voice agent</div>
+              <div style="font-size: 11px; color: var(--text-secondary); font-family: var(--font-body);">Claude wrote the summary · Gradium rendered the audio · Ready to play to the room.</div>
+            </div>
+            ${debrief.audio_url ? `
+              <button class="va-play-btn" id="debrief-play-btn" onclick="playDebriefAudio('${esc(debrief.audio_url)}', this)" style="flex-shrink: 0;">▶ Play to room</button>
+            ` : ''}
+          </div>
+          <div style="padding: 14px 18px; background: var(--bg-primary); border: 1px solid var(--border-bright); border-left: 2px solid var(--accent-thymia); font-family: var(--font-serif); font-style: italic; font-size: 15px; line-height: 1.6; color: var(--text-primary);">
+            "${esc(debrief.text)}"
+          </div>
+        </div>
+      ` : '';
+
+      const reportBlock = reportUrl ? `
+        <div style="display:flex;justify-content:space-between;align-items:center;gap:16px;">
+          <div>
+            <div style="font-family: var(--font-display); font-size: 17px; font-style: italic;">Session ended — <em style="color: var(--accent-good);">report ready</em></div>
+            <div style="font-size: 11px; color: var(--text-secondary); margin-top: 4px;">Full meeting summary, transcript, and flagged moments.</div>
+          </div>
+          <a href="${reportUrl}" target="_blank" style="padding: 10px 20px; background: var(--accent-signal); color: var(--bg-primary); font-size: 11px; text-transform: uppercase; letter-spacing: 0.14em; font-weight: 600; text-decoration: none; font-family: var(--font-body);">Open report →</a>
+        </div>
+      ` : '';
+
+      banner.innerHTML = reportBlock + debriefBlock;
+    }
+  }
+}
+
+function playDebriefAudio(url, btn) {
+  const audio = new Audio(url);
+  if (btn) {
+    btn.classList.add('playing');
+    btn.textContent = '■ Playing';
+  }
+  audio.onended = () => {
+    if (btn) {
+      btn.classList.remove('playing');
+      btn.textContent = '▶ Play again';
+    }
+  };
+  audio.onerror = () => {
+    if (btn) {
+      btn.classList.remove('playing');
+      btn.textContent = '⚠ Error';
+    }
+  };
+  audio.play().catch(err => {
+    if (btn) {
+      btn.classList.remove('playing');
+      btn.textContent = '▶ Play to room';
+    }
+    console.warn('Audio play failed:', err);
+  });
 }
 
 // Speaker toggle rendering (populated after primeLiveView runs)
@@ -1384,9 +1616,9 @@ function renderAgentUtterance(utt) {
   document.getElementById('agent-status').textContent = '● spoke';
   setTimeout(() => document.getElementById('agent-status').textContent = '—', 3000);
 
-  // 4. Auto-play if the toggle is checked
+  // 4. Auto-play if the toggle is checked (but NOT during interview mode — interview engine handles playback itself)
   const toggle = document.getElementById('autoplay-toggle');
-  if (toggle && toggle.checked && utt.audio_url) {
+  if (toggle && toggle.checked && utt.audio_url && !state.interview.active) {
     setTimeout(() => {
       const btn = document.getElementById('va-last-play');
       playAgentAudio(utt.audio_url, btn);

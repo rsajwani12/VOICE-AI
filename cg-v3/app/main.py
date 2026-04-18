@@ -153,20 +153,46 @@ async def force_agent_speak(payload: AgentSpeakIn | None = None):
     return {"ok": True, "utterance": None}
 
 
+@app.post("/api/session/interview")
+async def run_interview_sequence():
+    """Summary + adaptive follow-up questions as a sequence."""
+    if SESSION is None:
+        raise HTTPException(400, "No active session")
+    utterances = await SESSION.run_interview_sequence()
+    return {
+        "ok": True,
+        "count": len(utterances),
+        "utterances": [u.to_dict() for u in utterances],
+    }
+
+
 @app.post("/api/session/end")
 async def end_session():
     global SESSION
     if SESSION is None:
         return {"ok": True, "already_ended": True}
-    report_path = SESSION.generate_report()
-    await SESSION.stop()
+
+    # Try to generate the HTML report, but never let a report error kill the endpoint
+    report_url = None
+    try:
+        report_path = SESSION.generate_report()
+        from pathlib import Path
+        report_filename = Path(report_path).name
+        report_url = f"/reports/{report_filename}"
+    except Exception as e:
+        import traceback
+        print(f"[end_session] report generation failed: {e}")
+        traceback.print_exc()
+
+    try:
+        await SESSION.stop()
+    except Exception as e:
+        print(f"[end_session] session stop failed: {e}")
+
     SESSION = None
-    # Return a relative URL to the report (served from /reports)
-    from pathlib import Path
-    report_filename = Path(report_path).name
     return {
         "ok": True,
-        "report_url": f"/reports/{report_filename}",
+        "report_url": report_url,
     }
 
 

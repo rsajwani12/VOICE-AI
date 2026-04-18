@@ -211,6 +211,123 @@ Return `{{"items": []}}` if nothing new since last analysis. Do not repeat prior
         )
 
     # ====================================================================
+    # INTERVIEW MODE — summary followed by 2-3 adaptive follow-up questions
+    # ====================================================================
+    async def generate_interview_sequence(
+        self,
+        context: MeetingContext,
+        transcript: list[TranscriptLine],
+        biomarkers: list[BiomarkerUpdate],
+    ) -> list[AgentUtterance]:
+        """
+        Return a sequence of utterances for a summary-then-questions flow:
+          [0] A conversational summary of what's been discussed
+          [1..n] 2-3 follow-up questions that probe the summary
+        Each question is spoken in turn, waiting for the person to respond between.
+        """
+        if self.mock:
+            return [
+                AgentUtterance(text="So to summarise — we've explored the six-month migration with parallel-run as the safety net, and the client's Q3 board timeline as the pressure point. Let me ask a few follow-ups.", purpose="summary"),
+                AgentUtterance(text="What would need to be true for the six-month window to feel comfortable, rather than tight?", purpose="probe"),
+                AgentUtterance(text="If we had to simplify the board narrative, what's the one thing you'd want them to walk away hearing?", purpose="probe"),
+                AgentUtterance(text="And — what's still unsaid that you'd want to put on the table before we close?", purpose="probe"),
+            ]
+
+        if not transcript:
+            return []
+
+        prompt = self._build_interview_prompt(context, transcript, biomarkers)
+        try:
+            client = self._sdk()
+            msg = await client.messages.create(
+                model=config.CLAUDE_MODEL,
+                max_tokens=800,
+                messages=[{"role": "user", "content": prompt}],
+            )
+        except Exception as e:
+            print(f"[ClaudeBrain] interview sequence call failed: {e}")
+            return []
+
+        text = msg.content[0].text if msg.content else ""
+        return self._parse_interview_sequence(text)
+
+    def _build_interview_prompt(
+        self,
+        context: MeetingContext,
+        transcript: list[TranscriptLine],
+        biomarkers: list[BiomarkerUpdate],
+    ) -> str:
+        transcript_block = "\n".join(
+            f"[{l.speaker_name}]: {l.text}"
+            for l in transcript[-30:]
+        )
+        bio_block = self._summarise_biomarkers(biomarkers) or "Biomarkers calibrating."
+
+        return f"""You are the voice of an AI facilitator in a client meeting. The product manager ({self._pm_name(context)}) has asked you to run a short summary-and-questions cycle.
+
+# Context
+- Organisation: {context.org_name}
+- Objective: {context.objective}
+- Session type: {context.session_type}
+
+# Recent conversation
+{transcript_block}
+
+# Biomarker signal
+{bio_block}
+
+# Your task
+Produce ONE conversational summary, then 2 or 3 follow-up questions that probe what's been said. Choose 2 questions if the conversation is straightforward; choose 3 if there are real tensions or blind spots worth surfacing.
+
+# Tone
+- Conversational and natural — as if you were a skilled facilitator speaking aloud
+- Not formal, not clinical
+- Short sentences. You are speaking, not writing.
+- Don't preamble ("Let me summarise for you..."). Just summarise.
+
+# Rules
+- Each utterance is 1-2 sentences. Short.
+- Questions must be SPECIFIC to what was actually said, not generic.
+- Never commit on behalf of the company.
+- Never disclose biomarker data to the room.
+
+# Output format
+Return JSON only, strict schema:
+```
+{{
+  "utterances": [
+    {{"purpose": "summary", "text": "The summary, spoken aloud, 2-3 sentences max"}},
+    {{"purpose": "probe", "text": "First follow-up question"}},
+    {{"purpose": "probe", "text": "Second follow-up question"}},
+    {{"purpose": "probe", "text": "Optional third follow-up question"}}
+  ]
+}}
+```
+
+Return only the JSON."""
+
+    def _parse_interview_sequence(self, text: str) -> list[AgentUtterance]:
+        import re
+        m = re.search(r"\{[\s\S]*\}", text)
+        if not m:
+            return []
+        try:
+            data = json.loads(m.group(0))
+        except json.JSONDecodeError:
+            return []
+        out = []
+        for item in data.get("utterances", []):
+            t = (item.get("text") or "").strip()
+            if not t:
+                continue
+            out.append(AgentUtterance(
+                text=t,
+                purpose=item.get("purpose", "probe"),
+            ))
+        # Cap at 4 (summary + 3 questions)
+        return out[:4]
+
+    # ====================================================================
     # VOICE AGENT SPEECH — decides if/what the Gradium agent should say
     # ====================================================================
     async def generate_agent_utterance(
@@ -437,3 +554,103 @@ Return only the JSON."""
             return None
         purpose = random.choice(list(templates.keys()))
         return AgentUtterance(text=templates[purpose], purpose=purpose)
+
+    # ====================================================================
+    # CLOSING DEBRIEF — spoken summary + open questions at session end
+    # ====================================================================
+    async def generate_closing_debrief(
+        self,
+        context: MeetingContext,
+        transcript: list[TranscriptLine],
+        alerts: list[Alert],
+        biomarkers: list[BiomarkerUpdate],
+    ) -> str:
+        """
+        Produce a short debrief (~30 seconds spoken) that the voice agent
+        delivers at the end of the session.
+
+        Structure:
+        - 1-2 sentences summarising what was agreed / covered
+        - 2-3 open reflection questions to leave the team with
+
+        Returns the text — the session will pipe this through Gradium TTS.
+        """
+        if not transcript:
+            return "No conversation was recorded in this session. Thank you for your time."
+        if self.mock:
+            return self._mock_debrief(context, transcript)
+
+        prompt = self._build_debrief_prompt(context, transcript, alerts, biomarkers)
+        try:
+            client = self._sdk()
+            msg = await client.messages.create(
+                model=config.CLAUDE_MODEL,
+                max_tokens=600,
+                messages=[{"role": "user", "content": prompt}],
+            )
+        except Exception as e:
+            print(f"[ClaudeBrain] debrief call failed: {e}")
+            return self._mock_debrief(context, transcript)
+
+        text = msg.content[0].text if msg.content else ""
+        # Strip any preamble / markdown
+        return text.strip().strip('"').strip()
+
+    def _build_debrief_prompt(
+        self,
+        context: MeetingContext,
+        transcript: list[TranscriptLine],
+        alerts: list[Alert],
+        biomarkers: list[BiomarkerUpdate],
+    ) -> str:
+        transcript_block = "\n".join(
+            f"[{l.speaker_name}]: {l.text}"
+            for l in transcript[-60:]
+        )
+        alerts_block = "\n".join(
+            f"- ({a.type}) {a.title}: {a.detail}"
+            for a in alerts[-8:]
+        ) or "No alerts recorded."
+
+        return f"""You are the voice of the AI facilitator closing a client meeting. The session has just ended. Your job is to deliver a short closing debrief that the whole room will hear — spoken aloud via voice synthesis.
+
+# Meeting context
+- Organisation: {context.org_name}
+- Objective: {context.objective}
+- Session type: {context.session_type}
+
+# Transcript
+{transcript_block}
+
+# Private intelligence flagged during the session
+{alerts_block}
+
+# Your task
+Produce a spoken closing debrief of about 30 seconds (around 70-90 words total). Structure:
+
+1. **Recap (1-2 sentences)**: What was actually agreed or explored? Ground in what was said, not what could have been.
+
+2. **2-3 open reflection questions for the team**: Not rhetorical. Real questions the room could answer now or take away. These should:
+   - Draw on ambiguity or unresolved tension from the conversation
+   - Invite the team to reflect together, not to be graded
+   - Be phrased conversationally, the way a good facilitator would ask
+
+# Rules
+- Spoken delivery — short sentences, natural rhythm, no bullet points, no markdown
+- Neutral, warm, professional tone — you are a facilitator, not a participant
+- Do NOT disclose biomarker data or private intelligence alerts to the room
+- Do NOT commit on behalf of anyone or make decisions
+- Do NOT fabricate things that weren't said
+- Open with something natural like "To close us out..." or "Before we wrap..."
+
+Return only the spoken text. No JSON, no preamble, no explanations."""
+
+    def _mock_debrief(self, context: MeetingContext, transcript: list[TranscriptLine]) -> str:
+        return (
+            f"To close us out — we've explored {context.objective.split('.')[0].lower()} "
+            f"and surfaced the key tensions between timeline and board reporting. "
+            f"A few questions to leave you with: What's the one concern each of you wants "
+            f"answered before we meet again? Is there anyone not in this room whose view "
+            f"we should hear before the next step? And if we paused this for a week, "
+            f"what would we regret not asking today? Thank you for your time."
+        )

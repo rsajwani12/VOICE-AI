@@ -244,6 +244,19 @@ class MeetingSession:
             await self._emit_agent_utterance(utt)
         return utt
 
+    async def run_interview_sequence(self) -> list[AgentUtterance]:
+        """Generate a summary + 2-3 follow-up questions, synthesize TTS for each."""
+        utterances = await self.claude.generate_interview_sequence(
+            context=self.context,
+            transcript=self.transcript,
+            biomarkers=self.biomarkers,
+        )
+        for utt in utterances:
+            await self._emit_agent_utterance(utt)
+            # Brief pause between emissions so the frontend processes them in order
+            await asyncio.sleep(0.1)
+        return utterances
+
     async def _emit_agent_utterance(self, utt: AgentUtterance):
         """Synthesize the utterance via Gradium TTS and broadcast to dashboard."""
         try:
@@ -273,3 +286,38 @@ class MeetingSession:
             alerts=self.alerts,
             biomarkers=self.biomarkers,
         )
+
+    # ================================================================
+    # CLOSING DEBRIEF — Claude writes, Gradium speaks
+    # ================================================================
+    async def generate_closing_debrief(self) -> dict:
+        """
+        At end of session: generate a spoken debrief, synthesise the audio,
+        and return the text + audio URL. Called by /api/session/end BEFORE
+        the session is torn down, so the Claude and Gradium clients are still
+        available.
+        """
+        # 1. Ask Claude for the spoken text
+        text = await self.claude.generate_closing_debrief(
+            context=self.context,
+            transcript=self.transcript,
+            alerts=self.alerts,
+            biomarkers=self.biomarkers,
+        )
+
+        # 2. Render via Gradium TTS
+        audio_url = ""
+        try:
+            audio_bytes = await self.gradium.synthesize(text, output_format="wav")
+            filename = f"debrief-{self.session_id}-{int(time.time()*1000)}.wav"
+            path = self.audio_dir / filename
+            path.write_bytes(audio_bytes)
+            audio_url = f"/static/audio/{filename}"
+        except Exception as e:
+            print(f"[debrief TTS] error: {e}")
+
+        return {
+            "text": text,
+            "audio_url": audio_url,
+            "voice_id": self.gradium.voice_id,
+        }
